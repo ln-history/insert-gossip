@@ -1,7 +1,7 @@
 # requirements.txt
 kafka-python
 valkey
-requests[socks]
+requests
 python-dotenv
 psycopg2-binary
 lnhistoryclient==3.0.1

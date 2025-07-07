@@ -9,17 +9,8 @@ VALKEY_HOST = os.getenv("VALKEY_HOST", "localhost")
 VALKEY_PORT = int(os.getenv("VALKEY_PORT", 6379))
 VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD", None)
 
-COUCHDB_URL = os.getenv("COUCHDB_URL")
-COUCHDB_USER = os.getenv("COUCHDB_USER")
-COUCHDB_PASSWORD = os.getenv("COUCHDB_PASSWORD")
-
 EXPLORER_RPC_URL = os.getenv("EXPLORER_RPC_URL")
-PROXIES = {
-    "http": os.getenv("HTTP_PROXY", "socks5h://127.0.0.1:9050"),
-    "https": os.getenv("HTTPS_PROXY", "socks5h://127.0.0.1:9050"),
-}
-
-NODE_ID = os.getenv("NODE_ID")
+EXPLORER_RPC_PASSWORD = os.getenv("EXPLORER_RPC_PASSWORD")
 
 POSTGRES_USER = os.getenv("POSTGRES_USER")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
