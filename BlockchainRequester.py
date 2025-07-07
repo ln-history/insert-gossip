@@ -1,22 +1,17 @@
 from typing import Optional
 import logging
 import requests  # type: ignore[import-untyped]
-from lnhistoryclient.constants import (
-    MSG_TYPE_CHANNEL_ANNOUNCEMENT,
-    MSG_TYPE_CHANNEL_UPDATE,
-    MSG_TYPE_NODE_ANNOUNCEMENT,
-)
 from lnhistoryclient.parser import parser_factory
 from lnhistoryclient.parser.common import get_message_type_by_raw_hex, strip_known_message_type
 
-from config import COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER
+from config import COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER, PROXIES, EXPLORER_RPC_URL
 
 
 def get_block_by_block_height(block_height: int, logger: logging.Logger) -> Optional[dict]:  # type: ignore[type-arg]
     try:
         block_url = f"{COUCHDB_URL}/blocks/{block_height}"
         logger.debug(f"Fetching block data from: {block_url}")
-        resp = requests.get(block_url, auth=(COUCHDB_USER, COUCHDB_PASSWORD), timeout=15)
+        resp = requests.get(block_url, proxies={"http": None, "https": None}, auth=(COUCHDB_USER, COUCHDB_PASSWORD), timeout=15)
 
         if resp.status_code != 200:
             logger.warning(f"Block {block_height} not found (status {resp.status_code})")
@@ -29,67 +24,28 @@ def get_block_by_block_height(block_height: int, logger: logging.Logger) -> Opti
         return None
 
 
-def get_unix_timestamp_by_blockheight(block_height: int, logger: logging.Logger) -> Optional[int]:
-    logger.debug(f"Fetching timestamp for block_height: {block_height}")
+def get_amount_sat_by_tx_idx_and_output_idx(tx_id: int, output_idx: int, logger: logging.Logger) -> Optional[int]:
     try:
-        block_data = get_block_by_block_height(block_height, logger)
+        tx_url = f"{EXPLORER_RPC_URL}/api/tx/{tx_id}"
+        tx_resp = requests.get(tx_url, proxies=PROXIES, timeout=30)
 
-        if block_data is None:
+        if tx_resp.status_code != 200:
+            logger.error(f"Failed to fetch tx with tx_id {tx_id}: (status {tx_resp.status_code})")
             return None
 
-        timestamp = block_data.get("time")
-        if timestamp is None:
-            logger.warning(f"Missing 'time' field in block {block_height}")
-            return None
+        for vout in tx_resp.json().get("vout", []):
+            if vout.get("n") == output_idx:
+                value_btc = vout.get("value")
+                if value_btc is None:
+                    logger.error(f"Missing value for output index {output_idx} in tx {tx_id}")
+                    return None
+                amount_sat = int(value_btc * 100_000_000)
+                logger.debug(f"Found vout {output_idx}: {value_btc} BTC = {amount_sat} sats")
+                return amount_sat
 
-        timestamp_int = int(timestamp)
-        logger.debug(f"Parsed timestamp: {timestamp_int} for block {block_height}")
-        return timestamp_int
-
-    except Exception as e:
-        logger.exception(f"Failed to get timestamp for block {block_height}: {e}")
-        return None
-
-
-def get_recorded_at_unix_timestamp_from_fallback(raw_hex: str, gossip_id: str, logger: logging.Logger) -> Optional[int]:
-    logger.warning(f"Missing timestamp for gossip_id={gossip_id} — using fallback parsing")
-    try:
-        raw_bytes = bytes.fromhex(raw_hex)
-        logger.debug(f"Converted raw_hex to bytes for gossip_id={gossip_id}")
-
-        msg_type = get_message_type_by_raw_hex(raw_bytes)
-        parser = parser_factory.get_parser_by_message_type(msg_type)
-        stripped_raw_bytes = strip_known_message_type(raw_bytes) 
-        parsed = parser(stripped_raw_bytes)
-        logger.debug(f"Parsed message type: {msg_type} for gossip_id={gossip_id}")
-
-        if msg_type in (MSG_TYPE_NODE_ANNOUNCEMENT, MSG_TYPE_CHANNEL_UPDATE):
-            timestamp: int = parsed.get("timestamp")
-            if timestamp is None:
-                logger.warning(f"No timestamp found in parsed {msg_type} message for gossip_id={gossip_id}")
-                return None
-            logger.debug(f"Extracted timestamp={timestamp} for gossip_id={gossip_id}")
-            return timestamp
-
-        elif msg_type == MSG_TYPE_CHANNEL_ANNOUNCEMENT:
-            scid = parsed.scid_str
-            logger.debug(f"Parsed scid={scid} from channel_announcement for gossip_id={gossip_id}")
-            if not scid or "x" not in scid:
-                logger.warning(f"Invalid or missing scid in gossip_id={gossip_id}")
-                return None
-
-            block_height_str = scid.split("x")[0]
-            try:
-                block_height = int(block_height_str)
-                logger.debug(f"Extracted block_height={block_height} from scid for gossip_id={gossip_id}")
-                return get_unix_timestamp_by_blockheight(block_height, logger)
-            except ValueError:
-                logger.warning(f"Non-integer block height in scid={scid} for gossip_id={gossip_id}")
-                return None
-
-        logger.warning(f"No fallback logic for message type: {msg_type}")
+        logger.warning(f"Output index {output_idx} not found in tx {tx_id}")
         return None
 
     except Exception as e:
-        logger.exception(f"Error parsing fallback timestamp for gossip_id={gossip_id}: {e}")
+        logger.exception(f"Error resolving amount_sat for tx_id {tx_id} and output_idx {output_idx}: {e}")
         return None
