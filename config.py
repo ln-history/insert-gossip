@@ -4,10 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-KAFKA_SERVER_IP_ADDRESS = os.getenv("KAFKA_SERVER_IP_ADDRESS", "localhost")
-KAFKA_SERVER_PORT = int(os.getenv("KAFKA_SERVER_PORT", 9092))
-
-KAFKA_TOPIC_TO_PRODUCE = os.getenv("KAFKA_TOPIC_TO_PRODUCE", "gossip")
 
 VALKEY_HOST = os.getenv("VALKEY_HOST", "localhost")
 VALKEY_PORT = int(os.getenv("VALKEY_PORT", 6379))
@@ -24,3 +20,9 @@ PROXIES = {
 }
 
 NODE_ID = os.getenv("NODE_ID")
+
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT")
+POSTGRES_DB_NAME = os.getenv("POSTGRES_DB_NAME")

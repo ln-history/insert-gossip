@@ -1,0 +1,11 @@
+services:
+  insert-gossip:
+    build: .
+    container_name: insert-gossip
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    network_mode: host
