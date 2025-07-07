@@ -27,7 +27,7 @@ def get_block_by_block_height(block_height: int, logger: logging.Logger) -> Opti
 def get_amount_sat_by_tx_idx_and_output_idx(tx_id: int, output_idx: int, logger: logging.Logger) -> Optional[int]:
     try:
         tx_url = f"{EXPLORER_RPC_URL}/api/tx/{tx_id}"
-        tx_resp = requests.get(tx_url, proxies=PROXIES, timeout=30)
+        tx_resp = requests.get(tx_url, proxies=PROXIES, timeout=120)
 
         if tx_resp.status_code != 200:
             logger.error(f"Failed to fetch tx with tx_id {tx_id}: (status {tx_resp.status_code})")
