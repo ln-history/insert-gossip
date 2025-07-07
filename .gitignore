@@ -1,5 +1,9 @@
 /certs/*
 
+testchannel_announcements.gsp.bz2
+testnode_announcements.gsp.bz2
+testchannel_update.gsp.bz2
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

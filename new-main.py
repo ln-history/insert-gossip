@@ -15,6 +15,7 @@ from types import FrameType
 
 from ValkeyClient import ValkeyCache
 from NodeAnnouncementBatcher import NodeAnnouncementBatcher
+from config import POSTGRES_DB_NAME, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT
 
 from lnhistoryclient.constants import ALL_TYPES, GOSSIP_TYPE_NAMES
 from lnhistoryclient.parser.common import get_message_type_by_raw_hex, strip_known_message_type
@@ -132,9 +133,9 @@ def read_dataset(filename: str, start: int = 0, logger: Optional[logging.Logger]
                 last_logged = yielded
 
 
-def setup_logging(log_dir: str = "logs", log_file: str = "gossip_syncer.log") -> logging.Logger:
+def setup_logging(log_dir: str = "logs", log_file: str = "insert_gossip.log") -> logging.Logger:
     os.makedirs(log_dir, exist_ok=True)
-    logger = logging.getLogger("gossip_syncer")
+    logger = logging.getLogger("insert_gossip")
     logger.setLevel(logging.INFO)
 
     log_path = os.path.join(log_dir, log_file)
@@ -162,7 +163,7 @@ def shutdown(logger: logging.Logger, signum: Optional[int] = None, frame: Option
     sys.exit(0)
 
 def main() -> None:
-    file_path = "/Users/fabiankraus/Programming/topology/data/uniq2.gsp.bz2"
+    file_path = "./testnode_announcements.gsp.bz2"
 
     logger: logging.Logger = setup_logging()
     
@@ -190,7 +191,7 @@ def main() -> None:
     
     # Process messages using the simpler read_dataset function
     try:
-        for gossip_message in read_dataset(file_path, start=7_300_000, logger=logger):
+        for gossip_message in read_dataset(file_path, start=0, logger=logger):
             if not running:
                 break
 
@@ -200,6 +201,7 @@ def main() -> None:
                 if msg_type == 257:  # node_announcement
                     gossip_id = hashlib.sha256(gossip_message).digest()
                     if cache.has_gossip(gossip_id):
+                        logger.warning(f"Found duplicate gossip_message for gossip_id {gossip_id}")
                         continue
 
                     try:
@@ -262,7 +264,7 @@ stop_event: Optional[threading.Event] = None
 
 # Assume you have a global db connection
 conn = psycopg2.connect(
-    
+    dbname=POSTGRES_DB_NAME, user=POSTGRES_USER, password=POSTGRES_PASSWORD, host=POSTGRES_HOST, port=POSTGRES_PORT
 )
 
 if __name__ == "__main__":

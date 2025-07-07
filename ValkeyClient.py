@@ -52,9 +52,3 @@ class ValkeyCache:
         value = json.dumps({"validity": [from_ts.isoformat(), to_ts.isoformat()]})
         self.client.set(f"node:{node_id.hex()}", value)
 
-    def has_gossip(self, gossip_id: bytes) -> bool:
-        return self.client.exists(f"gossip:{gossip_id.hex()}") == 1
-
-    def cache_gossip(self, gossip_id: bytes) -> None:
-        self.client.set(f"gossip:{gossip_id.hex()}", "1")
-
