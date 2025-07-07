@@ -15,8 +15,8 @@ COUCHDB_PASSWORD = os.getenv("COUCHDB_PASSWORD")
 
 EXPLORER_RPC_URL = os.getenv("EXPLORER_RPC_URL")
 PROXIES = {
-    "http": os.getenv("HTTP_PROXY"),
-    "https": os.getenv("HTTPS_PROXY"),
+    "http": os.getenv("HTTP_PROXY", "socks5h://127.0.0.1:9050"),
+    "https": os.getenv("HTTPS_PROXY", "socks5h://127.0.0.1:9050"),
 }
 
 NODE_ID = os.getenv("NODE_ID")
