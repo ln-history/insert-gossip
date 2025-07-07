@@ -1,0 +1,7 @@
+# requirements.txt
+kafka-python
+valkey
+requests
+python-dotenv
+psycopg2-binary
+lnhistoryclient==3.0.1
