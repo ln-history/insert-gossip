@@ -1,22 +1,48 @@
 from typing import Optional
 import logging
 import requests  # type: ignore[import-untyped]
-from lnhistoryclient.parser import parser_factory
-from lnhistoryclient.parser.common import get_message_type_by_raw_hex, strip_known_message_type
+import threading
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from config import EXPLORER_RPC_URL, EXPLORER_RPC_PASSWORD
+# Limit concurrent requests (you can tune this)
+HTTP_CONCURRENCY_LIMIT = 5
+http_sema = threading.BoundedSemaphore(HTTP_CONCURRENCY_LIMIT)
+
+# Set up a shared requests session with retry and connection pooling
+session = requests.Session()
+adapter = HTTPAdapter(
+    pool_connections=HTTP_CONCURRENCY_LIMIT,
+    pool_maxsize=HTTP_CONCURRENCY_LIMIT,
+    max_retries=Retry(
+        total=5,
+        backoff_factor=0.3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+        raise_on_status=False
+    )
+)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
 
 
-def get_block_by_block_height(block_height: int, logger: logging.Logger) -> Optional[dict]:  # type: ignore[type-arg]
+def safe_get(*args, **kwargs):
+    """Thread-safe, throttled GET request."""
+    with http_sema:
+        return session.get(*args, **kwargs)
+
+
+def get_block_by_block_height(block_height: int, logger: logging.Logger) -> Optional[dict]:
     try:
         block_url = f"{EXPLORER_RPC_URL}/api/block/{block_height}"
-        resp = requests.get(block_url, auth=("block-requester", EXPLORER_RPC_PASSWORD), timeout=15)
+        resp = safe_get(block_url, auth=("block-requester", EXPLORER_RPC_PASSWORD), timeout=15)
 
         if resp.status_code != 200:
             logger.warning(f"Block {block_height} not found (status {resp.status_code})")
             return None
 
-        return resp.json()  # type: ignore[no-any-return]
+        return resp.json()
     except Exception as e:
         logger.error(f"Error fetching block at block_height {block_height}: {e}")
         return None
@@ -25,7 +51,7 @@ def get_block_by_block_height(block_height: int, logger: logging.Logger) -> Opti
 def get_amount_sat_by_tx_idx_and_output_idx(tx_id: int, output_idx: int, logger: logging.Logger) -> Optional[int]:
     try:
         tx_url = f"{EXPLORER_RPC_URL}/api/tx/{tx_id}"
-        tx_resp = requests.get(tx_url, auth=("blockchain-requester", EXPLORER_RPC_PASSWORD), timeout=30)
+        tx_resp = safe_get(tx_url, auth=("blockchain-requester", EXPLORER_RPC_PASSWORD), timeout=30)
 
         if tx_resp.status_code != 200:
             logger.error(f"Failed to fetch tx with tx_id {tx_id}: (status {tx_resp.status_code})")
