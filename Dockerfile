@@ -26,4 +26,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run the script
-CMD ["python", "insert_channel_announcements_multi_thread.py"]
+CMD ["python", "insert_channel_announcements.py"]
