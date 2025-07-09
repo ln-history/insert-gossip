@@ -7,7 +7,7 @@ import bz2
 import struct
 import psycopg2
 import hashlib
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from logging.handlers import RotatingFileHandler
 from typing import Optional
@@ -61,7 +61,7 @@ def handle_node_announcement(raw_bytes: bytes, cache: ValkeyCache) -> None:
                 else:
                     # First ever seen → insert and cache
                     valid_from = timestamp
-                    valid_to = timestamp + timedelta(seconds=1)
+                    valid_to = timestamp
                     cur.execute("""
                         INSERT INTO nodes (node_id, validity)
                         VALUES (%s, tstzrange(%s, %s))
@@ -75,7 +75,7 @@ def handle_node_announcement(raw_bytes: bytes, cache: ValkeyCache) -> None:
             lower, upper = validity
             if timestamp < lower or timestamp > upper:
                 new_lower = min(lower, timestamp)
-                new_upper = max(upper, timestamp + timedelta(seconds=1))
+                new_upper = max(upper, timestamp)
                 cur.execute("""
                     UPDATE nodes
                     SET validity = tstzrange(%s, %s)
