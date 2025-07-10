@@ -73,6 +73,79 @@ def get_channel_creation_data(block_height: int, tx_idx: int, out_idx: int, logg
         logger.warning(f"Failed to get amount_sat for block_height {block_height} with tx_id {tx_id}, out {out_idx}: {e}")
         return result
 
+def process_channel_updates_batch(
+    raw_updates: List[bytes],
+    cache: ValkeyCache,
+    logger: logging.Logger,
+    batch_size: int = 500
+) -> None:
+    raw_gossip_values = []
+    channels_raw_gossip_values = []
+    channel_updates_values = []
+    gossip_ids_to_cache = []
+
+    for raw_bytes in raw_updates:
+        try:
+            gossip_id = hashlib.sha256(raw_bytes).digest()
+            channel_update: ChannelUpdate = parse_channel_update(strip_known_message_type(raw_bytes))
+            scid = channel_update.scid_str
+            direction = bool(channel_update.direction)
+            timestamp_unix = channel_update.timestamp
+            update_timestamp_dt = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc)
+
+            raw_gossip_values.append((gossip_id, 258, update_timestamp_dt, raw_bytes))
+            channels_raw_gossip_values.append((gossip_id, scid))
+
+            if cache.has_channel(scid):
+                channel_updates_values.append((scid, direction, update_timestamp_dt))
+            else:
+                logger.debug(f"Skipping channel_update due to missing channel:{scid} in Valkey cache")
+                # Optionally: collect for retry/fallback
+                # fallback_channel_updates.append((gossip_id, scid, direction, update_timestamp_dt))
+                continue
+
+            gossip_ids_to_cache.append(gossip_id)
+
+        except Exception as e:
+            logger.warning(f"Skipping invalid channel_update: {e}")
+            continue
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                if raw_gossip_values:
+                    cur.executemany("""
+                        INSERT INTO raw_gossip (gossip_id, gossip_message_type, timestamp, raw_gossip)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING;
+                    """, raw_gossip_values)
+                    logger.info(f"Inserted {len(raw_gossip_values)} entries into raw_gossip")
+
+                if channels_raw_gossip_values:
+                    cur.executemany("""
+                        INSERT INTO channels_raw_gossip (gossip_id, scid)
+                        VALUES (%s, %s)
+                        ON CONFLICT DO NOTHING;
+                    """, channels_raw_gossip_values)
+                    logger.info(f"Linked {len(channels_raw_gossip_values)} entries in channels_raw_gossip")
+
+                if channel_updates_values:
+                    cur.executemany("""
+                        INSERT INTO channel_updates (scid, direction, validity)
+                        VALUES (%s, %s, tstzrange(%s, NULL))
+                        ON CONFLICT DO NOTHING;
+                    """, channel_updates_values)
+                    logger.info(f"Inserted {len(channel_updates_values)} entries into channel_updates")
+
+                # Cache inserted gossip_ids
+                for gossip_id in gossip_ids_to_cache:
+                    cache.cache_gossip(gossip_id)
+
+    except ForeignKeyViolation as fk:
+        logger.error(f"FK violation during batch insert: {fk}")
+    except Exception as e:
+        logger.error(f"Unhandled error in batch insert: {e}")
+
 def handle_channel_update(raw_bytes: bytes, cache: ValkeyCache, logger: logging.Logger) -> None:
     try:
         gossip_id = hashlib.sha256(raw_bytes).digest()
@@ -264,10 +337,14 @@ def main() -> None:
     count = 0
     type_counts = {}
     current_type = None
+
+    BATCH_SIZE = 1000
+
+    batch = []
     
     # Process messages using the simpler read_dataset function
     try:
-        for gossip_message in read_dataset(file_path, start=0, logger=logger):
+        for gossip_message in read_dataset(file_path, start=220_700, logger=logger):
             if not running:
                 break
 
@@ -276,23 +353,17 @@ def main() -> None:
 
                 if msg_type == 258:  # channel_update
                     gossip_id = hashlib.sha256(gossip_message).digest()
+                    # Ignore duplicates
                     if cache.has_gossip(gossip_id):
-                        logger.warning(f"Found duplicate gossip_message raw_gossip {gossip_message} for gossip_id {gossip_id.hex()}")
+                        logger.warning(f"Found duplicate gossip_message for gossip_id {gossip_id.hex()}")
                         continue
 
-                    try:
-                        handle_channel_update(gossip_message, cache, logger)
+                    batch.append(gossip_message)
 
-                    except Exception as e:
-                        logger.warning(f"Skipping invalid channel_announcement: {e}")
-                        continue
-
-
-                elif msg_type == 256:  # channel_announcement
-                    pass  # To be implemented
-
-                elif msg_type == 258:  # channel_update
-                    pass  # To be implemented
+                    # If batch is full, insert
+                    if len(batch) >= BATCH_SIZE:
+                        process_channel_updates_batch(batch, cache, logger, batch_size=BATCH_SIZE)
+                        batch.clear()
 
                 else:
                     logger.warning(f"Unknown message type: {msg_type}")
