@@ -25,8 +25,8 @@ def varint_decode(r):
 
 def read_dataset(filename: str, start: int = 0, logger: Optional[logging.Logger] = None):
     with bz2.open(filename, 'rb') as f:
-        header = f.read(4)
-        assert header[:3] == b'GSP' and header[3] == 1
+        # header = f.read(4)
+        # assert header[:3] == b'GSP' and header[3] == 1
 
         skipped = 0
         yielded = 0
@@ -124,4 +124,4 @@ def split_gossip_file(input_file: str, output_prefix: str = ""):
 
 # --- Entry point ---
 if __name__ == "__main__":
-    split_gossip_file("/Users/fabiankraus/Programming/topology/data/uniq2.gsp.bz2", "test")
+    split_gossip_file("/Users/fabiankraus/Programming/ln-history/insert-gossip/gossip_store-22_06_2025-18-42", "june-2025-")
