@@ -99,7 +99,7 @@ def process_channel_updates_batch(
             if cache.has_channel(scid):
                 channel_updates_values.append((scid, direction, update_timestamp_dt))
             else:
-                logger.debug(f"Skipping channel_update due to missing channel:{scid} in Valkey cache")
+                logger.info(f"Skipping channel_update due to missing channel:{scid} in Valkey cache")
                 # Optionally: collect for retry/fallback
                 # fallback_channel_updates.append((gossip_id, scid, direction, update_timestamp_dt))
                 continue
@@ -344,7 +344,7 @@ def main() -> None:
     
     # Process messages using the simpler read_dataset function
     try:
-        for gossip_message in read_dataset(file_path, start=220_700, logger=logger):
+        for gossip_message in read_dataset(file_path, start=0, logger=logger):
             if not running:
                 break
 
