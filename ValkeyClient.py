@@ -49,6 +49,9 @@ class ValkeyCache:
     def invalidate_node(self, node_id: bytes) -> None:
         self.client.delete(f"node:{node_id.hex()}")
 
+    def has_channel(self, scid: str) -> bool:
+        return self.client.exists(f"scid:{scid}") == 1
+
     def get_node_validity(self, node_id: bytes) -> Optional[tuple[datetime, datetime]]:
         raw = self.client.get(f"node:{node_id.hex()}")
         if not raw:
