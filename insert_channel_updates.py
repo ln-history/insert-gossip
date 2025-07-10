@@ -11,17 +11,17 @@ from datetime import datetime, timezone
 from psycopg2.errors import ForeignKeyViolation
 
 from logging.handlers import RotatingFileHandler
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List, Tuple
 from types import FrameType
 
 from ValkeyClient import ValkeyCache
-from NodeAnnouncementBatcher import NodeAnnouncementBatcher
 from config import POSTGRES_DB_NAME, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT
+from BlockchainRequester import get_block_by_block_height, get_amount_sat_by_tx_idx_and_output_idx
 
 from lnhistoryclient.constants import ALL_TYPES, GOSSIP_TYPE_NAMES
 from lnhistoryclient.parser.common import get_message_type_by_raw_hex, strip_known_message_type
 from lnhistoryclient.parser.parser import parse_channel_update
-from BlockchainRequester import get_unix_timestamp_by_blockheight, get_amount_sat_by_tx_idx_and_output_idx
 
 from lnhistoryclient.model.ChannelUpdate import ChannelUpdate
 
@@ -33,18 +33,59 @@ def split_scid(scid, logger: logging.Logger) -> tuple[int, int, int]:
         logger.error(f"Could not split `scid` {scid}. - Skipping further handling")
         return
 
+def get_channel_creation_data(block_height: int, tx_idx: int, out_idx: int, logger: logging.Logger) -> Tuple[Optional[datetime], Optional[int]]:
+    result = (None, None)
+    try:
+        block = get_block_by_block_height(block_height, logger)
+        if not block:
+            logger.warning(f"Block at height {block_height} not found.")
+            return result
+    except Exception as e:
+        logger.warning(f"Failed to get bitcoin block at height {block_height}: {e}")
+        return result
+
+    block_timestamp_unix: Optional[int] = block.get("time", None)
+    if not block_timestamp_unix:
+        logger.warning(f"Missing timestamp in block at height {block_height}")
+        return result
+
+    channel_creation_timestamp = datetime.fromtimestamp(block_timestamp_unix, tz=timezone.utc)
+    result[0] = channel_creation_timestamp
+
+    block_tx: Optional[List[str]] = block.get("tx", None)
+    if not block_tx or tx_idx >= len(block_tx):
+        logger.warning(f"Invalid tx index {tx_idx} for block at height {block_height}")
+        return result
+    tx_id = block_tx[tx_idx]
+
+    if not tx_id:
+        logger.warning(f"Transaction ID (tx_id) is missing for tx index {tx_idx} in block {block_height}")
+        return result
+
+    try:
+        amount_sat: int = get_amount_sat_by_tx_idx_and_output_idx(tx_id, out_idx, logger)
+        if amount_sat is None:
+            logger.warning(f"Could not determine amount_sat for tx {tx_id} output {out_idx}")
+            return None
+        result[1] = amount_sat
+        return result
+    except Exception as e:
+        logger.warning(f"Failed to get amount_sat for block_height {block_height} with tx_id {tx_id}, out {out_idx}: {e}")
+        return result
+
 def handle_channel_update(raw_bytes: bytes, cache: ValkeyCache, logger: logging.Logger) -> None:
     try:
         gossip_id = hashlib.sha256(raw_bytes).digest()
 
         channel_update: ChannelUpdate = parse_channel_update(strip_known_message_type(raw_bytes))
         scid = channel_update.scid_str
+        block_height, tx_idx, out_idx = split_scid(scid, logger)
         direction = channel_update.direction
         timestamp_unix = channel_update.timestamp
         update_timestamp_dt = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc)
 
     except Exception as e:
-        raise ValueError(f"Invalid channel_announcement with raw_gossip {raw_bytes} format: {e}")
+        raise ValueError(f"Invalid channel_update with raw_gossip {raw_bytes} format: {e}")
     
     try:
         with conn:
@@ -57,7 +98,7 @@ def handle_channel_update(raw_bytes: bytes, cache: ValkeyCache, logger: logging.
                 """, (
                     gossip_id, 258, update_timestamp_dt, raw_bytes
                 ))
-                logger.info(f"Inserted raw_gossip for channel_update {scid}, gossip_id={gossip_id.hex()}")
+                logger.info(f"Inserted raw_gossip with gossip_id={gossip_id.hex()} for channel_update (scid, direction) ({scid, direction})")
 
                 # 2. Insert into channels_raw_gossip
                 cur.execute("""
@@ -67,7 +108,7 @@ def handle_channel_update(raw_bytes: bytes, cache: ValkeyCache, logger: logging.
                 """, (
                     gossip_id, scid
                 ))
-                logger.info(f"Linked gossip_id to scid in channels_raw_gossip: {scid}")
+                logger.info(f"Linked gossip_id {gossip_id.hex()} to scid in channels_raw_gossip: {scid}")
 
                 # 3. Insert into channel_updates
                 try:
@@ -76,24 +117,28 @@ def handle_channel_update(raw_bytes: bytes, cache: ValkeyCache, logger: logging.
                         VALUES (%s, %s, tstzrange(%s, NULL))
                         ON CONFLICT DO NOTHING;
                     """, (
-                        scid, direction, update_timestamp_dt
+                        scid, bool(direction), update_timestamp_dt
                     ))
-                    logger.info(f"Inserted channel_update for {scid}, direction={direction}")
+                    logger.info(f"Inserted channel_update for scid {scid}, direction {direction}")
 
                 except ForeignKeyViolation as fk_error:
-                    logger.warning(f"Missing channel {scid} for channel_update. FK violation: {fk_error}")
+                    logger.warning(f"Missing channel scid {scid} for channel_update with gossip_id {gossip_id}. FK violation: {fk_error}")
                     logger.info(f"Inserting placeholder channel and retrying...")
 
                     try:
+                        channel_creation_data = get_channel_creation_data(block_height, tx_idx, out_idx, logger)
+                        channel_creation_dt: Optional[datetime] = channel_creation_data[0]
+                        amount_sat: Optional[int] = channel_creation_data[1]
+
                         # Insert fallback channel
                         cur.execute("""
                             INSERT INTO channels (scid, validity, source_node_id, target_node_id, amount_sat)
-                            VALUES (%s, tstzrange(%s, NULL), NULL, NULL, NULL)
+                            VALUES (%s, tstzrange(%s, NULL), NULL, NULL, %s)
                             ON CONFLICT DO NOTHING;
                         """, (
-                            scid, update_timestamp_dt
+                            scid, channel_creation_dt, amount_sat
                         ))
-                        logger.warning(f"Inserted placeholder channel for scid {scid}")
+                        logger.warning(f"Inserted placeholder channel with scid {scid} at creation timestamp {channel_creation_dt} with amount_sat {amount_sat}")
 
                         # Retry inserting channel_update
                         cur.execute("""
@@ -163,13 +208,17 @@ def read_dataset(filename: str, start: int = 0, logger: Optional[logging.Logger]
                 last_logged = yielded
 
 
-def setup_logging(log_dir: str = "logs", log_file: str = "insert_gossip.log") -> logging.Logger:
+def setup_logging(log_dir: str = "logs", log_file_base: str = "insert_gossip") -> logging.Logger:
     os.makedirs(log_dir, exist_ok=True)
     logger = logging.getLogger("insert_gossip")
     logger.setLevel(logging.INFO)
 
-    log_path = os.path.join(log_dir, log_file)
-    file_handler = RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=5)
+    # Add timestamp to filename
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_filename = f"{log_file_base}_{timestamp}.log"
+    log_path = os.path.join(log_dir, log_filename)
+
+    file_handler = RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=100)
     file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
     stream_handler = logging.StreamHandler()
@@ -193,7 +242,7 @@ def shutdown(logger: logging.Logger, signum: Optional[int] = None, frame: Option
     sys.exit(0)
 
 def main() -> None:
-    file_path = "./testchannel_announcements.gsp.bz2"
+    file_path = "./testchannel_update.gsp.bz2"
 
     logger: logging.Logger = setup_logging()
     
@@ -225,10 +274,10 @@ def main() -> None:
             try:
                 msg_type = get_message_type_by_raw_hex(gossip_message)
 
-                if msg_type == 256:  # channel_announcement
+                if msg_type == 258:  # channel_update
                     gossip_id = hashlib.sha256(gossip_message).digest()
                     if cache.has_gossip(gossip_id):
-                        logger.warning(f"Found duplicate gossip_message raw_gossip {gossip_message} for gossip_id {gossip_id}")
+                        logger.warning(f"Found duplicate gossip_message raw_gossip {gossip_message} for gossip_id {gossip_id.hex()}")
                         continue
 
                     try:
