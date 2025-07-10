@@ -208,7 +208,7 @@ def read_dataset(filename: str, start: int = 0, logger: Optional[logging.Logger]
                 last_logged = yielded
 
 
-def setup_logging(log_dir: str = "logs", log_file_base: str = "insert_gossip") -> logging.Logger:
+def setup_logging(log_dir: str = "logs", log_file_base: str = "insert_channel_updates") -> logging.Logger:
     os.makedirs(log_dir, exist_ok=True)
     logger = logging.getLogger("insert_gossip")
     logger.setLevel(logging.INFO)
