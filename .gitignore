@@ -2,9 +2,17 @@
 gossip-20201014
 channels.sqlite
 *.bz2
+*.gz
 *.gsp
 gossip_store
 *.duckdb
+ln-history-database-data/
+grafana-data/
+prometheus-data/
+data/
+import-data/
+old/
+migration_dumps/
 
 testchannel_announcements.gsp.bz2
 testnode_announcements.gsp.bz2

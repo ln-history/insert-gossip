@@ -1,29 +1,15 @@
-# Use a lightweight Python image
-FROM python:3.13-alpine
+FROM python:3.11-slim
 
-# Install system deps
-RUN apk update && apk add --no-cache \
-    curl \
-    gcc \
-    libressl-dev \
-    musl-dev \
-    py3-pip \
-    python3-dev \
-    libevent-dev
-
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Set work directory
 WORKDIR /app
 
-# Install dependencies
+# Install system dependencies (gcc needed for some python builds)
+RUN apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code
-COPY . .
+COPY main.py .
 
-# Run the script
-CMD ["python", "main.py"]
+# We don't set an entrypoint/cmd here because this is a "Run Once" tool.
+# We will trigger it manually via docker compose run.
+CMD ["python", "-u", "main.py"]

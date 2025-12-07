@@ -11,6 +11,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Build Docker image
+        run: docker build -t ghcr.io/${{ github.repository }}/insert-gossip:latest .
+
+      # Authenticate GHCR (GitHub Container Registry)
+      - name: Authenticate to GHCR
+        run: echo "${{ secrets.TOKEN }}" | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+
+      # Push Docker Image
+      - name: Push Docker Image
+        run: docker push ghcr.io/ln-history/insert-gossip:latest
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v0.1.10
         with:

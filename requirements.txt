@@ -1,10 +1,6 @@
 # requirements.txt
-kafka-python
-valkey
-requests
-python-dotenv
-psycopg2-binary
-aiohttp
 duckdb
-pandas
-lnhistoryclient==3.6.0
+psycopg[binary]
+lnhistoryclient
+python-dotenv
+prometheus-client

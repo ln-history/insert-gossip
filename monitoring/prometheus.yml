@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'gossip_processor'
+    static_configs:
+      - targets: ['gossip-processor:8000']
+
+  - job_name: 'chain_enricher'
+    static_configs:
+      - targets: ['chain-enricher:8001']
+
+  - job_name: 'peer_manager'
+    static_configs:
+      - targets: ['peer-manager:8003']
