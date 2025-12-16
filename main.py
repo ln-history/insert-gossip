@@ -125,7 +125,7 @@ def parse_and_stage(con):
     count = 0
     import_time = datetime.now(timezone.utc)
 
-    for raw_with_varint in read_gossip_file(GOSSIP_FILE_PATH, logger=logger):
+    for raw_with_varint in read_gossip_file(GOSSIP_FILE_PATH):
         count += 1
         if count % 50000 == 0:
             logger.info(f"Parsed {count} messages...")
@@ -184,7 +184,6 @@ def parse_and_stage(con):
                 ))
                 
                 # Normalize Addresses
-                # Using _parse_addresses() from your library to get objects
                 for addr in p._parse_addresses():
                     # addr is Address object with typ (AddressType object)
                     t_id = addr.typ.id if addr.typ else None

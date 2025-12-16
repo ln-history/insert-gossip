@@ -11,7 +11,7 @@ services:
       GOSSIP_FILE_PATH: /data/gossip_store
     volumes:
       # MOUNT YOUR HUGE FILE HERE
-      - ./import-data/gossip_store2:/data/gossip_store
+      - ./import-data/gossip_store_minibolt:/data/gossip_store
     depends_on:
       - ln-history-database
 
